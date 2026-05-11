@@ -1,0 +1,127 @@
+#include <SoftwareSerial.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+const int MQ_PIN = A0;
+
+const int BUZZER_PIN = 8;
+
+SoftwareSerial gsm(2, 3);
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+const int THRESHOLD = 150;
+
+bool alarmActive = false;
+bool gsmTriggered = false;
+unsigned long alarmStartTime = 0;
+
+void setup() {
+
+  Serial.begin(9600);
+  gsm.begin(9600);
+
+  pinMode(MQ_PIN, INPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  digitalWrite(BUZZER_PIN, LOW);
+
+  lcd.init();
+  lcd.backlight();
+
+  lcd.setCursor(0, 0);
+  lcd.print("Gas System");
+
+  lcd.setCursor(0, 1);
+  lcd.print("Starting...");
+
+  Serial.println("System Starting...");
+
+  delay(30000); 
+
+  gsm.println("AT");
+  delay(1000);
+}
+
+void loop() {
+
+  int gasValue = analogRead(MQ_PIN);
+
+  Serial.print("Gas Value: ");
+  Serial.println(gasValue);
+
+  lcd.setCursor(0, 0);
+  lcd.print("Gas: ");
+  lcd.print(gasValue);
+  lcd.print("    ");
+
+  if (gasValue > THRESHOLD && !alarmActive) {
+
+    alarmActive = true;
+    alarmStartTime = millis();
+    gsmTriggered = false;
+
+    Serial.println("GAS DETECTED!");
+  }
+
+  if (alarmActive) {
+
+    tone(BUZZER_PIN, 1000);
+    lcd.setCursor(0, 1);
+    lcd.print("!! GAS ALERT !!");
+
+    if (!gsmTriggered) {
+
+      makeCall("+8801639056199");
+      delay(3000);
+      sendSMS("+8801639056199", "WARNING! Gas leakage detected!");
+
+      gsmTriggered = true;
+    }
+
+    if (millis() - alarmStartTime >= 5000 && gasValue <= THRESHOLD) {
+
+      alarmActive = false;
+
+      digitalWrite(LED_PIN, LOW);
+      noTone(BUZZER_PIN);
+
+      Serial.println("ALARM STOP");
+    }
+  }
+
+  if (!alarmActive && gasValue <= THRESHOLD) {
+  
+    noTone(BUZZER_PIN);
+    lcd.setCursor(0, 1);
+    lcd.print("Gas Safe      ");
+  }
+
+  delay(300);
+}
+
+void makeCall(String number) {
+  Serial.println("Calling...");
+  gsm.print("ATD");
+  gsm.print(number);
+  gsm.println(";");
+  delay(15000);
+  gsm.println("ATH");
+  Serial.println("Call Ended");
+}
+void sendSMS(String number, String msg) {
+  Serial.println("Sending SMS...");
+  gsm.println("AT+CMGF=1");
+  delay(1000);
+  gsm.print("AT+CMGS=\"");
+  gsm.print(number);
+  gsm.println("\"");
+  delay(1000);
+
+  gsm.print(msg);
+  delay(500);
+  gsm.write(26);
+  delay(5000);
+
+  Serial.println("SMS Sent");
+}
